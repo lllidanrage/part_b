@@ -67,17 +67,18 @@ class GameState:
         visited = set()
 
         default_directions = [
-            Direction.Down,
-            Direction.DownLeft,
-            Direction.DownRight,
-            Direction.Left,
-            Direction.Right
-        ]
-
-        red_directions = [
             Direction.Up,
             Direction.UpLeft,
             Direction.UpRight,
+            Direction.Down,
+            Direction.DownLeft,
+            Direction.DownRight,
+        ]
+
+        red_directions = [
+            Direction.Down,
+            Direction.DownLeft,
+            Direction.DownRight,
             Direction.Left,
             Direction.Right
         ]
