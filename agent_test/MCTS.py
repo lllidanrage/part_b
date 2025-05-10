@@ -20,47 +20,25 @@ class Node:
         """
         Select the child with the highest UCB1 value.
         """
-        # Ensure parent node has visits to avoid log(0) error
-        if self.visits == 0:
-            self.visits = 1
-            
         exploration_constant = math.sqrt(2)
 
         current_player = 0 if self.state.board.turn_color == PlayerColor.RED else 1
 
         def ucb(child) -> float:
             if child.visits == 0:
-                return float('inf')  # Unexplored nodes have infinite value
+                return float('inf')
 
             return (child.total_rewards[current_player] / child.visits +
                     exploration_constant * math.sqrt(math.log(self.visits) / child.visits))
-        
-        # Ensure there are children to select
-        if not self.children:
-            return self.expand()
-            
+
         return max(self.children, key=ucb)
 
-    def expand(self, action=None):
-        try:
-            if action is None:
-                # If no action specified, randomly choose an unexplored action
-                if not self.unexplored_actions:
-                    return None
-                action = random.choice(list(self.unexplored_actions))
-                self.unexplored_actions.remove(action)
-            else:
-                # If action is specified, remove it from unexplored actions if present
-                if action in self.unexplored_actions:
-                    self.unexplored_actions.remove(action)
-                    
-            next_state = self.state.move(action)
-            child = Node(next_state, parent=self)
-            self.children.append(child)
-            return child
-        except Exception as e:
-            print(f"Error expanding node: {e}")
-            return None
+    def expand(self):
+        action = self.unexplored_actions.pop()
+        next_state = self.state.move(action)
+        child = Node(next_state, parent=self)
+        self.children.append(child)
+        return child
 
     def update(self, reward):
         self.visits += 1
@@ -77,25 +55,13 @@ class MCTS:
     def __init__(self, state):
         self.root = Node(state)
 
-    def search(self, iterations=40):
-        # Ensure root node has at least one visit
-        if self.root.visits == 0:
-            self.root.visits = 1
-            
+    def search(self, iterations=2):
         for _ in range(iterations):
             node = self.select()
-            if node is None:
-                continue  # Skip this iteration
-                
             reward = self.simulate(node)
             self.backpropagation(node, reward)
 
             print(_ + 1, "iterations")
-            
-        # If root has no children, return None
-        if not self.root.children:
-            return None
-            
         return max(self.root.children, key=lambda n: n.visits).state.last_move
 
     def select(self):
@@ -104,11 +70,7 @@ class MCTS:
             if current.unexplored_actions:
                 return current.expand()
             else:
-                next_node = current.select_child()
-                # Prevent infinite loops
-                if next_node is None or next_node is current:
-                    return current
-                current = next_node
+                current = current.select_child()
         return current
 
     def simulate(self, node):
@@ -302,77 +264,6 @@ class GameState:
 
         else:
             return evaluate_heuristic()
-
-
-class MinimaxMCTSHybrid:
-    def __init__(self, state, minimax_depth=2):
-        self.initial_state = state
-        self.minimax_depth = minimax_depth  
-        
-    def search(self, iterations=40, time_budget=None):
-        # First use Minimax to generate initial tree
-        best_action, best_value = self.minimax(self.initial_state, self.minimax_depth, float('-inf'), float('inf'), True)
-        
-        # If no valid action found, try selecting directly from legal actions
-        if best_action is None:
-            legal_actions = self.initial_state.get_legal_actions()
-            if legal_actions:  # Ensure there are legal actions
-                best_action = random.choice(list(legal_actions))
-        
-        # If time allows, continue with MCTS search
-        if (time_budget is None or time_budget > 0) and best_action is not None:
-            try:
-                # Create MCTS using original state and preferred action
-                mcts = MCTS(self.initial_state)
-                # Expand preferred action first
-                for action in self.initial_state.get_legal_actions():
-                    child = mcts.root.expand(action)
-                    if action == best_action:
-                        # Give preferred action higher initial weight
-                        child.visits = 10
-                        if self.initial_state.board.turn_color == PlayerColor.RED:
-                            child.total_rewards[0] = 5
-                        else:
-                            child.total_rewards[1] = 5
-                refined_action = mcts.search(iterations)
-                if refined_action is not None:
-                    return refined_action
-            except Exception as e:
-                print(f"MCTS search error: {e}, using Minimax result")
-        
-        return best_action
-        
-    def minimax(self, state, depth, alpha, beta, maximizing):
-        
-        if depth == 0 or state.is_terminal():
-            return None, state.get_reward()
-            
-        if maximizing:
-            best_value = float('-inf')
-            best_action = None
-            for action in state.get_legal_actions():
-                next_state = state.move(action)
-                _, value = self.minimax(next_state, depth-1, alpha, beta, False)
-                if value > best_value:
-                    best_value = value
-                    best_action = action
-                alpha = max(alpha, best_value)
-                if beta <= alpha:
-                    break  
-            return best_action, best_value
-        else:
-            best_value = float('inf')
-            best_action = None
-            for action in state.get_legal_actions():
-                next_state = state.move(action)
-                _, value = self.minimax(next_state, depth-1, alpha, beta, True)
-                if value < best_value:
-                    best_value = value
-                    best_action = action
-                beta = min(beta, best_value)
-                if beta <= alpha:
-                    break  
-            return best_action, best_value
 
 
 if __name__ == '__main__':

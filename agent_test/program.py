@@ -4,8 +4,7 @@
 from referee.game import PlayerColor, Coord, Direction, \
     Action, MoveAction, GrowAction, Board
 
-from .MCTS import MinimaxMCTSHybrid, GameState
-import time
+from .MCTS import MCTS, GameState
 
 class Agent:
     """
@@ -20,8 +19,6 @@ class Agent:
         """
         self._color = color
         self._board = Board()
-        self._total_time_used = 0
-        self._move_count = 0
         
         match color:
             case PlayerColor.RED:
@@ -34,45 +31,13 @@ class Agent:
         This method is called by the referee each time it is the agent's turn
         to take an action. It must always return an action object. 
         """
-        # Record start time
-        start_time = time.process_time()
-        
-        # Create current game state
+
         current_state = GameState(None, self._board)
         
-        # Calculate time budget
-        self._move_count += 1
-        remaining_time = 170 - self._total_time_used  # Reserve 10s safety margin
-        estimated_moves_left = max(30 - self._move_count, 10)  # Assume max 30 turns
-        time_budget = remaining_time / estimated_moves_left
-        
-        # Adjust search depth based on game stage
-        piece_count = sum(1 for _, cell in self._board._state.items() 
-                         if cell.state in (PlayerColor.RED, PlayerColor.BLUE))
-        
-        if piece_count > 14 or time_budget < 1:
-            # Early game or time pressure: shallow Minimax
-            minimax_depth = 1
-            mcts_iterations = 30  
-        elif piece_count > 8:
-            # Mid game: moderate depth
-            minimax_depth = 2
-            mcts_iterations = 50  
-        else:
-            # End game: deep search
-            minimax_depth = 3
-            mcts_iterations = 40  
-            
-        # Use hybrid algorithm to search for best action
-        hybrid = MinimaxMCTSHybrid(current_state, minimax_depth=minimax_depth)
-        best_action = hybrid.search(iterations=mcts_iterations, time_budget=time_budget)
 
-        # Update time statistics
-        elapsed = time.process_time() - start_time
-        self._total_time_used += elapsed
-        print(f"Move {self._move_count} took {elapsed:.2f}s, total: {self._total_time_used:.2f}s, budget: {time_budget:.2f}s")
+        mcts = MCTS(current_state)
+        best_action = mcts.search(iterations=20)
 
-        # If no valid action found, play default GROW
         if best_action is None:
             match self._color:
                 case PlayerColor.RED:
@@ -95,7 +60,7 @@ class Agent:
         This method is called by the referee after a player has taken their
         turn. You should use it to update the agent's internal game state. 
         """
-        # Update internal game state
+        # 更新内部游戏状态
         self._board.apply_action(action)
 
 
@@ -109,9 +74,3 @@ class Agent:
                 print(f"Testing: {color} played GROW action")
             case _:
                 raise ValueError(f"Unknown action type: {action}")
-        
-        # Check if game is over (board is full or no valid moves)
-        if self._board.game_over:
-            print(f"GAME OVER - Total CPU time used: {self._total_time_used:.2f}s out of 180s limit")
-            if self._total_time_used > 180:
-                print("WARNING: CPU time exceeded 180 second limit!")
