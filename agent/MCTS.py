@@ -1,6 +1,8 @@
 import math
+from collections import defaultdict
+from copy import deepcopy
 
-from referee.game import Direction, Coord, MoveAction
+from referee.game import Direction, MoveAction, GrowAction, IllegalActionException, BOARD_N
 from referee.game.player import PlayerColor
 
 
@@ -47,6 +49,7 @@ class Node:
             self.total_rewards[1] += reward
             self.total_rewards[0] -= reward
 
+
 class MCTS:
     def __init__(self,
                  state,
@@ -64,15 +67,21 @@ class GameState:
         self.board = board
 
     def get_legal_actions(self, coord):
+        actions = defaultdict(set)
+
         visited = set()
 
-        default_directions = [
+        leaves_positions = set()
+
+        all_directions = [
             Direction.Up,
             Direction.UpLeft,
             Direction.UpRight,
             Direction.Down,
             Direction.DownLeft,
             Direction.DownRight,
+            Direction.Left,
+            Direction.Right
         ]
 
         red_directions = [
@@ -92,7 +101,19 @@ class GameState:
         ]
 
         def evaluate_action(action):
-            pass
+            score = 1
+
+            if isinstance(action, MoveAction):
+                init_coord = action.coord
+                final_coord = action.coord
+                directions = action.directions
+
+                for direction in directions:
+                    final_coord += direction
+
+                score = abs(final_coord.r - init_coord.r)
+
+            action[score].add(action)
 
         def normal_move(curr_coord, directions):
             for direction in directions:
@@ -116,7 +137,8 @@ class GameState:
                 try:
                     route_coord = curr_coord + direction
                     next_coord = route_coord + direction
-                    if (self.board[route_coord].state in (PlayerColor.RED, PlayerColor.BLUE) and
+                    if (self.board[route_coord].state in
+                            (PlayerColor.RED, PlayerColor.BLUE) and
                             self.board[next_coord].state == 'LilyPad'):
                         new_direction = path + [direction]
 
@@ -126,6 +148,90 @@ class GameState:
                             visited.remove(next_coord)
                 except ValueError:
                     continue
+
+        def grow_leaves(coord):
+            for direction in all_directions:
+                try:
+                    next_coord = coord + direction
+                    if self.board[next_coord].state is None:
+                        leaves_positions.add(next_coord)
+                except ValueError:
+                    continue
+
+            if leaves_positions:
+                action = GrowAction()
+                evaluate_action(action)
+
+        match self.board.turn_color:
+            case PlayerColor.RED:
+                red_positions = []
+
+                for coord, CellState in self.board._state.items():
+                    if CellState.state == PlayerColor.RED:
+                        red_positions.append(coord)
+
+                for coord in red_positions:
+                    normal_move(coord, red_directions)
+                    jump_move(coord, [], red_directions)
+                    grow_leaves(coord)
+
+            case PlayerColor.BLUE:
+                blue_positions = []
+
+                for coord, CellState in self.board._state.items():
+                    if CellState.state == PlayerColor.BLUE:
+                        blue_positions.append(coord)
+
+                for coord in blue_positions:
+                    normal_move(coord, blue_directions)
+                    jump_move(coord, [], blue_directions)
+                    grow_leaves(coord)
+        if actions:
+            max_actions = actions[max(actions)]
+        else:
+            max_actions = None
+
+        return actions
+
+    def move(self, action):
+
+        new_board = deepcopy(self.board)
+
+        try:
+            mutation = new_board.apply_action(action)
+        except IllegalActionException as e:
+            raise ValueError(f"Illegal action: {e}")
+        return GameState(last_move=action, board=new_board)
+
+    def is_terminal(self):
+        return self.board.game_over
+
+    def get_reward(self):
+
+        def evaluate_heuristic():
+            red_advance = self.board._row_count(PlayerColor.RED, BOARD_N - 1) / (BOARD_N - 2)
+            blue_advance = self.board._row_count(PlayerColor.BLUE, 0) / (BOARD_N - 2)
+
+            score = red_advance - blue_advance
+
+            if self.board.turn_color == PlayerColor.RED:
+                return score
+            else:
+                return -score
+
+        if self.is_terminal():
+            red_score = self.board._player_score(PlayerColor.RED)
+            blue_score = self.board._player_score(PlayerColor.BLUE)
+
+            if self.board.turn_color == PlayerColor.RED:
+                return 1.0 if red_score > blue_score else \
+                    (-1.0 if red_score < blue_score else 0.0)
+            else:
+                return 1.0 if blue_score > red_score else \
+                    (-1.0 if blue_score < red_score else 0.0)
+
+        else:
+            return evaluate_heuristic()
 
 
 if __name__ == '__main__':
