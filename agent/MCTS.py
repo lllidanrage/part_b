@@ -55,13 +55,13 @@ class MCTS:
     def __init__(self, state):
         self.root = Node(state)
 
-    def search(self, iterations=3000):
+    def search(self, iterations=50):
         for _ in range(iterations):
             node = self.select()
             reward = self.simulate(node)
             self.backpropagation(node, reward)
 
-            print(_ + 1, "iterations")
+            # print(_ + 1, "iterations")
         return max(self.root.children, key=lambda n: n.visits).state.last_move
 
     def select(self):
@@ -221,7 +221,7 @@ class GameState:
         if actions:
             return actions[max(actions)]
         else:
-            return set()
+            return None
 
     def move(self, action):
         legal_actions = self.get_legal_actions()

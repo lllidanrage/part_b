@@ -18,7 +18,7 @@ class Agent:
         Any setup and/or precomputation should be done here.
         """
         self._color = color
-        self._board = Board() 
+        self._board = Board()
         
         match color:
             case PlayerColor.RED:
@@ -31,14 +31,13 @@ class Agent:
         This method is called by the referee each time it is the agent's turn
         to take an action. It must always return an action object. 
         """
-        # 创建当前游戏状态
+
         current_state = GameState(None, self._board)
         
-        # 使用MCTS算法选择最佳动作
+
         mcts = MCTS(current_state)
         best_action = mcts.search(iterations=1000)
-        
-        # 如果找不到合法动作，则执行默认动作
+
         if best_action is None:
             match self._color:
                 case PlayerColor.RED:
@@ -47,8 +46,7 @@ class Agent:
                 case PlayerColor.BLUE:
                     print("Testing: BLUE is playing a default GROW action")
                     return GrowAction()
-        
-        # 打印选择的动作
+
         match self._color:
             case PlayerColor.RED:
                 print("Testing: RED is playing a MOVE action")
@@ -65,7 +63,7 @@ class Agent:
         # 更新内部游戏状态
         self._board.apply_action(action)
 
-        # 打印动作信息（仅用于调试）
+
         match action:
             case MoveAction(coord, dirs):
                 dirs_text = ", ".join([str(dir) for dir in dirs])
