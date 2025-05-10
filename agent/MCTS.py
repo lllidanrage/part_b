@@ -1,8 +1,9 @@
 import math
+import random
 from collections import defaultdict
 from copy import deepcopy
 
-from referee.game import Direction, MoveAction, GrowAction, IllegalActionException, BOARD_N
+from referee.game import Direction, MoveAction, GrowAction, IllegalActionException, BOARD_N, Board
 from referee.game.player import PlayerColor
 
 
@@ -51,14 +52,45 @@ class Node:
 
 
 class MCTS:
-    def __init__(self,
-                 state,
-                 num_simulations: int = 1000,
-                 exploration_constant: float = 1.4):
-        self.state = state
-        self.num_simulations = num_simulations
-        self.exploration_constant = exploration_constant
+    def __init__(self, state):
         self.root = Node(state)
+        self.simulation_count = 10
+
+    def search(self, iterations=3000):
+        for _ in range(iterations):
+            node = self.select()
+            reward = self.simulate(node)
+            self.backpropagation(node, reward)
+
+            print(_ + 1, "iterations")
+        return max(self.root.children, key=lambda n: n.visits).state.last_move
+
+    def select(self):
+        current = self.root
+        while not current.state.is_terminal():
+            if current.unexplored_actions:
+                return current.expand()
+            else:
+                current = current.select_child()
+        return current
+
+    def simulate(self, node):
+        current_state = deepcopy(node.state)
+        while not current_state.is_terminal() and self.simulation_count > 0:
+            legal_actions = current_state.get_legal_actions()
+            if not legal_actions:
+                break
+
+            action = random.choice(list(legal_actions))
+            current_state = current_state.move(action)
+            self.simulation_count -= 1
+        return current_state.get_reward()
+
+    def backpropagation(self, node, reward):
+        while node:
+            node.update(reward)
+            node = node.parent
+        return
 
 
 class GameState:
@@ -235,4 +267,9 @@ class GameState:
 
 
 if __name__ == '__main__':
-    pass
+    board = Board()
+    initial_state = GameState(last_move=None, board=board)
+
+    mcts = MCTS(initial_state)
+    best_action = mcts.search(iterations=1000)
+    print("Best action:", best_action)
