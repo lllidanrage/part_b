@@ -54,7 +54,6 @@ class Node:
 class MCTS:
     def __init__(self, state):
         self.root = Node(state)
-        self.simulation_count = 10
 
     def search(self, iterations=3000):
         for _ in range(iterations):
@@ -75,8 +74,9 @@ class MCTS:
         return current
 
     def simulate(self, node):
-        current_state = deepcopy(node.state)
-        while not current_state.is_terminal() and self.simulation_count > 0:
+        current_state = node.state
+        simulation_count = 10
+        while not current_state.is_terminal() and simulation_count > 0:
             legal_actions = current_state.get_legal_actions()
             if not legal_actions:
                 break
@@ -98,7 +98,7 @@ class GameState:
         self.last_move = last_move
         self.board = board
 
-    def get_legal_actions(self, coord):
+    def get_legal_actions(self):
         actions = defaultdict(set)
 
         visited = set()
@@ -145,7 +145,7 @@ class GameState:
 
                 score = abs(final_coord.r - init_coord.r)
 
-            action[score].add(action)
+            actions[score].add(action)
 
         def normal_move(curr_coord, directions):
             for direction in directions:
@@ -268,7 +268,7 @@ class GameState:
 
 if __name__ == '__main__':
     board = Board()
-    initial_state = GameState(last_move=None, board=board)
+    initial_state = GameState(None, board)
 
     mcts = MCTS(initial_state)
     best_action = mcts.search(iterations=1000)
