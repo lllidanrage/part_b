@@ -83,7 +83,7 @@ class MCTS:
 
             action = random.choice(list(legal_actions))
             current_state = current_state.move(action)
-            self.simulation_count -= 1
+            simulation_count -= 1
         return current_state.get_reward()
 
     def backpropagation(self, node, reward):
@@ -219,16 +219,16 @@ class GameState:
                     jump_move(coord, [], blue_directions)
                     grow_leaves(coord)
         if actions:
-            max_actions = actions[max(actions)]
+            return actions[max(actions)]
         else:
-            max_actions = None
-
-        return actions
+            return set()
 
     def move(self, action):
+        legal_actions = self.get_legal_actions()
+        if action not in legal_actions:
+            raise ValueError(f"Illegal action: {action}")
 
         new_board = deepcopy(self.board)
-
         try:
             mutation = new_board.apply_action(action)
         except IllegalActionException as e:

@@ -2,8 +2,9 @@
 # Project Part B: Game Playing Agent
 
 from referee.game import PlayerColor, Coord, Direction, \
-    Action, MoveAction, GrowAction
-    
+    Action, MoveAction, GrowAction, Board
+
+from .MCTS import MCTS, GameState
 
 class Agent:
     """
@@ -17,6 +18,8 @@ class Agent:
         Any setup and/or precomputation should be done here.
         """
         self._color = color
+        self._board = Board() 
+        
         match color:
             case PlayerColor.RED:
                 print("Testing: I am playing as RED")
@@ -28,32 +31,41 @@ class Agent:
         This method is called by the referee each time it is the agent's turn
         to take an action. It must always return an action object. 
         """
-
-        # Below we have hardcoded two actions to be played depending on whether
-        # the agent is playing as BLUE or RED. Obviously this won't work beyond
-        # the initial moves of the game, so you should use some game playing
-        # technique(s) to determine the best action to take.
+        # 创建当前游戏状态
+        current_state = GameState(None, self._board)
+        
+        # 使用MCTS算法选择最佳动作
+        mcts = MCTS(current_state)
+        best_action = mcts.search(iterations=1000)
+        
+        # 如果找不到合法动作，则执行默认动作
+        if best_action is None:
+            match self._color:
+                case PlayerColor.RED:
+                    print("Testing: RED is playing a default GROW action")
+                    return GrowAction()
+                case PlayerColor.BLUE:
+                    print("Testing: BLUE is playing a default GROW action")
+                    return GrowAction()
+        
+        # 打印选择的动作
         match self._color:
             case PlayerColor.RED:
                 print("Testing: RED is playing a MOVE action")
-                return MoveAction(
-                    Coord(0, 3),
-                    [Direction.Down]
-                )
             case PlayerColor.BLUE:
-                print("Testing: BLUE is playing a GROW action")
-                return GrowAction()
+                print("Testing: BLUE is playing a MOVE action")
+        
+        return best_action
 
     def update(self, color: PlayerColor, action: Action, **referee: dict):
         """
         This method is called by the referee after a player has taken their
         turn. You should use it to update the agent's internal game state. 
         """
+        # 更新内部游戏状态
+        self._board.apply_action(action)
 
-        # There are two possible action types: MOVE and GROW. Below we check
-        # which type of action was played and print out the details of the
-        # action for demonstration purposes. You should replace this with your
-        # own logic to update your agent's internal game state representation.
+        # 打印动作信息（仅用于调试）
         match action:
             case MoveAction(coord, dirs):
                 dirs_text = ", ".join([str(dir) for dir in dirs])
