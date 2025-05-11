@@ -120,6 +120,18 @@ class Board:
             raise IndexError(f"Cell position '{cell}' is invalid.")
         return self._state[cell]
 
+    def clone(self) -> "Board":
+        new_board = Board(initial_player=self._turn_color) # Pass initial_player
+        # Create new CellState objects for each coordinate
+        new_board._state = {
+            coord: CellState(cell.state) 
+            for coord, cell in self._state.items()
+        }
+        # Preserve other necessary attributes
+        new_board._history = list(self._history) # Shallow copy is fine for history
+        # _turn_color is already set by the constructor
+        return new_board
+
     def apply_action(self, action: Action) -> BoardMutation:
         """
         Apply an action to a board, mutating the board state. Throws an
