@@ -130,14 +130,14 @@ class MCTS:
     1:    优先级⑲  - 无连跳潜力的水平跳跃 / 非向前普通移动
     0.5:  优先级⑳  - 终点线无效腾挪 (新，棋子已在终点线且移动/跳跃后仍在该终点线)
     """
-    def __init__(self, state, use_minimax=True, minimax_depth=2, test_mode=False):
+    def __init__(self, state, use_minimax=True, minimax_depth=2, test_mode=True):
         self.root = Node(state)  # Node.__init__ 内部会处理 unexplored_actions
         self.use_minimax = use_minimax  # 是否使用Minimax进行模拟
         self.minimax_depth = minimax_depth  # 增加Minimax搜索深度默认值
         self.test_mode = test_mode  # 添加测试模式标志
         self.root_player_color = state.board.turn_color # Added: Store root player's color
 
-    def search(self, iterations: int = 50):
+    def search(self, iterations: int = 30):
         # ---------- 固定开局检查 ----------
         if self.root.state.should_use_fixed_opening() and not self.test_mode:
             fixed_move = self.root.state.get_fixed_opening_move()
@@ -366,7 +366,7 @@ class MCTS:
         sorted_actions = sorted(legal_actions, key=lambda a: action_priorities[a], reverse=True)
         
         # 取优先级最高的几个动作
-        max_actions_to_consider = 12
+        max_actions_to_consider = 8
         pruned_actions = sorted_actions[:max_actions_to_consider]
         
         # 进行Minimax搜索
@@ -464,6 +464,7 @@ ALL_DIRECTIONS_ORDERED = [
 ]
 LEGAL_JUMP_DIRECTIONS_RED = tuple(d for d in ALL_DIRECTIONS_ORDERED if d not in {Direction.Up, Direction.UpRight, Direction.UpLeft})
 LEGAL_JUMP_DIRECTIONS_BLUE = tuple(d for d in ALL_DIRECTIONS_ORDERED if d not in {Direction.Down, Direction.DownRight, Direction.DownLeft})
+MAX_JUMP_SEGMENTS = 4 # Limit chain jump length (e.g., up to 4 segments)
 
 # 新的克隆函数定义
 def _clone_board_mcts_version(board_to_clone: Board) -> Board:
@@ -539,7 +540,10 @@ class GameState:
             current_pos, current_path_dirs, current_mask, visited_landings = stack.pop()
 
             jumped_further_in_this_step = False
-            for direction in jump_directions:
+            if len(current_path_dirs) >= MAX_JUMP_SEGMENTS:
+                pass 
+            else:
+                for direction in jump_directions:
                     dr, dc = direction.value.r, direction.value.c # Direction increments
                     
                     # Calculate integer coordinates first
