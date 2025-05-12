@@ -1,15 +1,12 @@
-# COMP30024 Artificial Intelligence, Semester 1 2025
-# Project Part B: Game Playing Agent
-
 import math
 import random
 import time
 import sys
 import os
-from collections import defaultdict, deque 
+from collections import defaultdict, deque  # 导入 deque
 from copy import deepcopy
 
-
+# 添加项目根目录到系统路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from referee.game import Direction, MoveAction, GrowAction, IllegalActionException, BOARD_N, Board, Coord, Action
@@ -18,10 +15,6 @@ from referee.game.board import CellState
 
 
 class Node:
-    """
-    A node in the Monte Carlo Tree Search tree.
-    Each node represents a game state and maintains statistics for the MCTS algorithm.
-    """
     __slots__ = ("state", "parent", "children", "total_rewards",
                 "visits", "unexplored_actions")
                 
@@ -29,11 +22,11 @@ class Node:
         self.state = state
         self.parent = parent
         self.children = []
-        self.total_rewards = 0.0  # Store as a single float, relative to root player
+        self.total_rewards = 0.0  # Changed: Store as a single float, relative to root player
         self.visits = 0
-        # GameState.get_legal_actions() returns a list sorted by priority (highest first)
-        # Use deque for efficient pop from the left (highest priority)
-        self.unexplored_actions = deque(state.get_legal_actions())
+        # GameState.get_legal_actions() now returns a list sorted by priority (highest first).
+        # We use a deque for efficient pop from the left (highest priority).
+        self.unexplored_actions = deque(state.get_legal_actions()) 
 
     def select_child(self, root_player_color):
         """
@@ -47,13 +40,13 @@ class Node:
         exploration_constant = 1.414
         current_decision_maker_color = self.state.board.turn_color
 
-        # Determine if the current decision maker is the same as the root player
-        # If so, they want to maximize child.total_rewards (which is from root's perspective)
-        # If not, they are the opponent, and want to minimize child.total_rewards (from root's perspective)
+        # Determine if the current decision maker is the same as the root player.
+        # If so, they want to maximize child.total_rewards (which is from root's perspective).
+        # If not, they are the opponent, and want to minimize child.total_rewards (from root's perspective),
+        # which means maximizing -child.total_rewards.
         exploitation_coeff = 1.0 if current_decision_maker_color == root_player_color else -1.0
 
         def ucb(child_node) -> float:
-            """Calculate the UCB1 value for a child node with additional heuristic bonuses."""
             if child_node.visits == 0:
                 return float('inf')
             
@@ -69,8 +62,9 @@ class Node:
             action_to_child = child_node.state.last_move
             if action_to_child and isinstance(action_to_child, MoveAction):
                 current_eval_pos = action_to_child.coord
-                final_eval_coord = action_to_child.coord
+                final_eval_coord = action_to_child.coord # Initialize final_eval_coord before the loop
                 for jump_dir_segment in action_to_child.directions:
+                    # 修改为此处的两行，以简化计算并处理滑动/跳跃
                     final_eval_coord = current_eval_pos + jump_dir_segment.value
                     current_eval_pos = final_eval_coord
                 
@@ -92,10 +86,6 @@ class Node:
         return max(self.children, key=ucb)
 
     def expand(self):
-        """
-        Expand the current node by adding a child node with an unexplored action.
-        Returns the new child node or self if no expansion is possible.
-        """
         if self.unexplored_actions:
             action = self.unexplored_actions.popleft()
             try:
@@ -108,78 +98,78 @@ class Node:
         return self 
 
     def update(self, reward_increment_relative_to_root):
-        """
-        Update the node's statistics with a new reward.
-        The reward is always from the perspective of the root player.
-        """
         self.visits += 1
+        # This reward is always from the perspective of the root player.
+        # The root node itself will not have its total_rewards changed by this logic in backpropagation.
         self.total_rewards += reward_increment_relative_to_root
 
 
 class MCTS:
     """
-    Monte Carlo Tree Search implementation with action priorities.
+    蒙特卡洛树搜索算法实现
     
-    Action Priority Levels:
-    1000: Priority 1  - Game-winning moves (reaching opponent's edge with non-starting piece)
-    500:  Priority 2  - Single frog breakthrough (within 2 steps of goal line and moving forward)
-    300:  Priority 3  - Multi-jump advance (row change >= 2 with forward jumps)
-    200:  Priority 4  - Forward jumps with isolated pieces
-    190:  Priority 5  - Opening phase: Jumps that significantly improve formation
-    180:  Priority 6  - Opening phase: Moves that significantly improve formation
-    160:  Priority 7  - Opening phase: Jumps that improve isolated piece cohesion
-    150:  Priority 8  - Forward line push (normal forward jumps)
-    140:  Priority 9  - Opening phase: Jumps with minor formation improvement
-    130:  Priority 10 - Opening phase: Moves with minor formation improvement
-    120:  Priority 11 - Opening phase: GROW actions that improve formation
-    100:  Priority 12 - Bridge building (GROW actions creating jump opportunities)
-    55:   Priority 13 - Blocking opponent (improving cohesion of isolated pieces in opening)
-    50:   Priority 14 - Default GROW actions / Normal forward moves
-    40:   Priority 15 - Self-blocking prevention
-    30:   Priority 16 - Non-forward jumps with chain potential / Isolated piece moves improving cohesion
-    20:   Priority 17 - Isolated piece moves
-    10:   Priority 18 - Default actions
-    1:    Priority 19 - Horizontal jumps without chain potential / Non-forward normal moves
-    0.5:  Priority 20 - Goal line shuffling (piece already on goal line, moves to stay on it)
+    优先级说明:
+    1000: 优先级①  - 终结胜局（到达对面边界且非起点已在边界）
+    500:  优先级②  - 单蛙冲线（距离目标边界不超过2步且向目标前进）
+    300:  优先级③  - 多跳推进（行数变化>=2的向前跳跃）
+    200:  优先级④  - 离群棋子的向前跳跃
+    190:  优先级⑤  - 开局阶段: 显著改善线形的跳跃
+    180:  优先级⑥  - 开局阶段: 显著改善线形的移动
+    160:  优先级⑦  - 开局阶段: 提高孤立棋子紧凑度的跳跃
+    150:  优先级⑧  - 平推前线（普通向前跳跃）
+    140:  优先级⑨  - 开局阶段: 轻微改善线形的跳跃
+    130:  优先级⑩  - 开局阶段: 轻微改善线形的移动
+    120:  优先级⑪  - 开局阶段: GROW能改善阵型
+    100:  优先级⑫  - 造桥补路（创造跳跃机会的GROW）
+    55:   优先级⑬  - 阻断对手（开局孤立棋子改善紧凑度）
+    50:   优先级⑭  - GROW动作（默认） / 普通向前移动
+    40:   优先级⑮  - 防堵自己（避免断路）
+    30:   优先级⑯  - 非向前跳跃（有连跳潜力）/ 离群棋子移动且提高紧凑度
+    20:   优先级⑰  - 离群棋子移动
+    10:   优先级⑱  - 默认行动
+    1:    优先级⑲  - 无连跳潜力的水平跳跃 / 非向前普通移动
+    0.5:  优先级⑳  - 终点线无效腾挪 (新，棋子已在终点线且移动/跳跃后仍在该终点线)
     """
     def __init__(self, state, use_minimax=True, minimax_depth=2, test_mode=False):
-        self.root = Node(state)
-        self.use_minimax = use_minimax
-        self.minimax_depth = minimax_depth
-        self.test_mode = test_mode
-        self.root_player_color = state.board.turn_color
+        self.root = Node(state)  # Node.__init__ 内部会处理 unexplored_actions
+        self.use_minimax = use_minimax  # 是否使用Minimax进行模拟
+        self.minimax_depth = minimax_depth  # 增加Minimax搜索深度默认值
+        self.test_mode = test_mode  # 添加测试模式标志
+        self.root_player_color = state.board.turn_color # Added: Store root player's color
 
     def search(self, iterations: int = 50):
-        """
-        Perform Monte Carlo Tree Search for the specified number of iterations.
-        Returns the best action found.
-        """
-        # Check for fixed opening moves
+        # ---------- 固定开局检查 ----------
         if self.root.state.should_use_fixed_opening() and not self.test_mode:
             fixed_move = self.root.state.get_fixed_opening_move()
             if fixed_move is not None:
-                # Increment fixed move counter for current color
+                # ① 当前颜色的固定步计数 +1
                 if self.root.state.board.turn_color == PlayerColor.RED:
                     self.root.state._red_fixed_moves += 1
+                    # ② 同步到棋盘，供下一回合新的 GameState 读取
                     self.root.state.board._red_fixed_moves = self.root.state._red_fixed_moves
                 else:
                     self.root.state._blue_fixed_moves += 1
                     self.root.state.board._blue_fixed_moves = self.root.state._blue_fixed_moves
 
+                # 记录在根节点，方便 UCB 偏好等逻辑使用（可选）
                 self.root.state.last_move = fixed_move
                 return fixed_move
-
-        # Main MCTS loop
+        # ---------- 正常 MCTS ----------
         for _ in range(iterations):
             leaf = self.select()
             if not leaf.unexplored_actions and not leaf.children and not leaf.state.is_terminal():
-                # Handle potential dead-end states
+                # If leaf is non-terminal, has no children and no unexplored actions, it might be a dead end from illegal moves
+                # This can happen if all expansions from it failed. Backpropagate a very bad score.
+                # Or, GameState.get_legal_actions() might have returned empty for a non-terminal state.
+                # For now, let's assume select finds a valid leaf or expand() handles it.
                 pass 
             
+            # If leaf is terminal or has no unexplored actions (but might have children), simulate from it.
+            # If it has unexplored actions, expand one then simulate from the new child.
             if leaf.unexplored_actions and not leaf.state.is_terminal():
                 child_leaf = leaf.expand()
                 if child_leaf != leaf: 
-                    sim_reward = self.simulate(child_leaf)
+                    sim_reward = self.simulate(child_leaf) # sim_reward is from child_leaf's perspective (whose turn it is there)
                     self.backpropagation(child_leaf, sim_reward)
                 else: 
                     sim_reward = self.simulate(leaf) 
@@ -188,68 +178,60 @@ class MCTS:
                  sim_reward = self.simulate(leaf)
                  self.backpropagation(leaf, sim_reward)
 
-        if not self.root.children:
+        if not self.root.children:          # 终局节点
             return None
         
-        # Debug: Print root children statistics
+        # Debug: Print root children stats
         print("\n--- Root Children Stats ---")
+        # Rewards in children are already relative to self.root_player_color
+        # The root player (self.root_player_color) wants to maximize these rewards.
         for child in self.root.children:
             act = child.state.last_move
             if child.visits > 0:
-                mean_reward = child.total_rewards / child.visits
+                mean_reward = child.total_rewards / child.visits # child.total_rewards is relative to root player
             else:
                 mean_reward = 0.0 
             print(f"{str(act):<40}  visits={child.visits:<3}  mean_reward={mean_reward:+.3f}")
         print("---------------------------")
 
-        # Select best child based on average reward
+        # Final selection based on rewards for the root player.
+        # child.total_rewards is already from the root player's perspective.
         best_child = max(self.root.children, 
                          key=lambda n: n.total_rewards / (n.visits or 1))
         return best_child.state.last_move
 
     def select(self):
-        """
-        Select a leaf node using the UCB1 formula.
-        Returns either:
-        1. A non-terminal node with unexplored actions
-        2. A terminal node
-        3. A non-terminal node that couldn't expand (rare edge case)
-        """
         current = self.root
         while not current.state.is_terminal():
             if current.unexplored_actions:
                 return current 
             elif not current.children: 
-                return current
+                return current # Should be a terminal node or a node that couldn't expand
             else:
-                current = current.select_child(self.root_player_color)
+                current = current.select_child(self.root_player_color) # Pass root_player_color
         return current
 
     def simulate(self, node):
-        """
-        Simulate a game from the given node until terminal state or simulation limit.
-        Uses either Minimax or random simulation based on configuration.
-        """
         if self.use_minimax:
+            # 使用Minimax进行模拟
             return self.minimax_simulation(node.state, self.minimax_depth)
         else:
+            # 改进的随机模拟，优先选择向前跳跃动作
             return self.random_simulation(node.state)
     
     def minimax_simulation(self, state, depth):
-        """
-        Perform a Minimax simulation with alpha-beta pruning.
-        Uses action priorities to focus on promising moves.
-        """
+        """使用Minimax算法进行模拟，应用策略表的优先级"""
+        # 获取可能的动作
         legal_actions_set = state.get_legal_actions()
         if not legal_actions_set:
             return state.get_reward()
             
-        # Convert action set to list and evaluate priorities
+        # 将集合转换为列表并评估优先级
         legal_actions = []
         action_priorities = {}
         
         for action in legal_actions_set:
-            priority = 1  # Default lowest priority
+            priority = 1  # 默认最低优先级
             
             if isinstance(action, MoveAction):
                 init_coord = action.coord
@@ -259,12 +241,12 @@ class MCTS:
                 for direction in directions:
                     final_coord += direction
                 
-                # Priority 1: Game-winning moves
+                # 优先级①: 终结胜局
                 if ((state.board.turn_color == PlayerColor.RED and final_coord.r == BOARD_N - 1) or
                     (state.board.turn_color == PlayerColor.BLUE and final_coord.r == 0)):
-                    priority = 1000
+                    priority = 1000  # 最高优先级
                     
-                # Priority 2: Single frog breakthrough
+                # 优先级②: 单蛙冲线
                 distance_to_goal = 0
                 if state.board.turn_color == PlayerColor.RED:
                     distance_to_goal = BOARD_N - 1 - init_coord.r
@@ -275,26 +257,29 @@ class MCTS:
                     if distance_to_goal <= 2 and final_coord.r < init_coord.r:
                         priority = max(priority, 500)
                 
-                # Calculate piece cohesion scores
+                # 计算棋子与其他己方棋子的紧凑度
                 try:
                     current_cohesion = self._calculate_cohesion_score(state, state.board.turn_color, init_coord)
                     final_cohesion = self._calculate_cohesion_score(state, state.board.turn_color, final_coord)
                     
-                    is_isolated = current_cohesion < 0.3
-                    improves_cohesion = final_cohesion > current_cohesion
+                    # 检查是否是离群棋子
+                    is_isolated = current_cohesion < 0.3  # 紧凑度低于0.3认为是离群棋子
+                    improves_cohesion = final_cohesion > current_cohesion  # 移动后紧凑度增加
                 except:
+                    # 如果计算紧凑度失败，设为默认值
                     is_isolated = False
                     improves_cohesion = False
                 
+                # 计算行数变化
                 row_change = abs(final_coord.r - init_coord.r)
                 
-                # Check if move is forward
+                # 判断是否是向前跳跃
                 is_forward = False
                 if ((state.board.turn_color == PlayerColor.RED and final_coord.r > init_coord.r) or
                     (state.board.turn_color == PlayerColor.BLUE and final_coord.r < init_coord.r)):
                     is_forward = True
                 
-                # Analyze jump moves
+                # 检查是否是跳跃动作
                 is_jump = False
                 jump_target = None
                 if len(directions) == 1:
@@ -311,21 +296,24 @@ class MCTS:
                         pass
                 
                 if is_jump:
+                    # 跳跃动作处理
                     if is_forward:
-                        # Priority 3: Multi-jump advance
+                        # 优先级③: 多跳推进
                         if row_change >= 2:
                             priority = max(priority, 300)
                         elif is_isolated and improves_cohesion:
-                            # Priority 4: Forward jumps with isolated pieces
+                            # 离群棋子的向前跳跃
                             priority = max(priority, 120)
                         else:
-                            # Priority 8: Forward line push
+                            # 优先级⑥: 平推前线
                             priority = max(priority, 150)
                     else:
-                        # Analyze chain jump potential
+                        # 水平跳跃 - 检查是否有连跳潜力
                         has_chain_potential = False
                         
+                        # 检查从跳跃目标位置是否存在后续的跳跃机会
                         if jump_target:
+                            # 只检查向前的方向，简化计算
                             forward_directions = []
                             if state.board.turn_color == PlayerColor.RED:
                                 forward_directions = [Direction.Down, Direction.DownLeft, Direction.DownRight]
@@ -350,45 +338,47 @@ class MCTS:
                                     continue
                         
                         if is_isolated and improves_cohesion:
-                            # Priority 16: Isolated piece moves improving cohesion
+                            # 离群棋子移动且提高紧凑度
                             priority = max(priority, 30)
                         elif has_chain_potential:
-                            # Priority 16: Non-forward jumps with chain potential
+                            # 有连跳潜力的水平跳跃
                             priority = max(priority, 30)
+                        # 无连跳潜力的水平跳跃保持最低优先级1
                 else:
-                    # Handle non-jump moves
+                    # 非跳跃动作的简化处理
                     if is_forward:
+                        # 普通向前移动
                         if is_isolated and improves_cohesion:
-                            # Priority 16: Isolated piece moves improving cohesion
+                            # 离群棋子移动且提高紧凑度
                             priority = max(priority, 30)
                         else:
-                            priority = max(priority, 1)  # Default priority
+                            priority = max(priority, 1)  # 默认最低优先级
+                    # 非向前移动保持最低优先级
                     
             elif isinstance(action, GrowAction):
-                # Priority 14: Default GROW actions
-                priority = 55
+                # 优先级④,⑤,⑦: 造桥补路、阻断对手、防堵自己
+                priority = 55  # 中等优先级(在5和6之间)
             
             action_priorities[action] = priority
             legal_actions.append(action)
         
-        # Sort actions by priority
+        # 根据优先级排序
         sorted_actions = sorted(legal_actions, key=lambda a: action_priorities[a], reverse=True)
         
-        # Consider only top priority actions for performance
+        # 取优先级最高的几个动作
         max_actions_to_consider = 12
         pruned_actions = sorted_actions[:max_actions_to_consider]
         
-        # Perform Minimax search
+        # 进行Minimax搜索
         return self.minimax(state, min(depth, 3), float('-inf'), float('inf'), True, pruned_actions)
         
     def minimax(self, state, depth, alpha, beta, maximizing_player, priority_actions=None):
-        """
-        Minimax algorithm with alpha-beta pruning.
-        Optionally considers only priority actions for better performance.
-        """
+        """使用Alpha-Beta剪枝的Minimax算法，可选择性地只考虑优先动作"""
+        # 如果达到终止条件（终止状态或达到最大深度）
         if depth == 0 or state.is_terminal():
             return state.get_reward()
         
+        # 确定要考虑的动作列表
         if priority_actions is not None and priority_actions:
             actions_to_consider = priority_actions
         else:
@@ -402,6 +392,7 @@ class MCTS:
         
         if maximizing_player:
             value = float('-inf')
+            # 遍历所有合法动作
             for action in actions_to_consider:
                 try:
                     next_state = state.move(action)
@@ -409,12 +400,14 @@ class MCTS:
                     value = max(value, new_value)
                     alpha = max(alpha, value)
                     if beta <= alpha:
-                        break  # Beta pruning
-                except Exception:
+                        break  # Beta剪枝
+                except Exception as e:
+                    # 处理可能的异常（如非法动作）
                     continue
             return value
         else:
             value = float('inf')
+            # 遍历所有合法动作
             for action in actions_to_consider:
                 try:
                     next_state = state.move(action)
@@ -422,18 +415,16 @@ class MCTS:
                     value = min(value, new_value)
                     beta = min(beta, value)
                     if beta <= alpha:
-                        break  # Alpha pruning
-                except Exception:
+                        break  # Alpha剪枝
+                except Exception as e:
+                    # 处理可能的异常（如非法动作）
                     continue
             return value
     
     def random_simulation(self, state):
-        """
-        Perform a random simulation from the given state.
-        Uses action priorities to guide the simulation.
-        """
+        """根据策略表的优先级进行模拟"""
         current_state = state
-        simulation_count = 8
+        simulation_count = 8 # Adjusted simulation_count
         for _ in range(simulation_count):
             if current_state.is_terminal(): break
             legal_actions_list = current_state.get_legal_actions()
@@ -443,15 +434,14 @@ class MCTS:
                 current_state = current_state.move(action_to_simulate)
             except ValueError: 
                 break 
+        # get_reward() should be from perspective of current_state.board.turn_color
         return current_state.get_reward()
 
     def backpropagation(self, node, reward_from_sim_leaf_pov):
-        """
-        Backpropagate the simulation result through the tree.
-        Converts rewards to be relative to the root player's perspective.
-        """
+        # reward_from_sim_leaf_pov is from the perspective of the player whose turn it is AT THE SIMULATION LEAF node (node).
         sim_leaf_player_color = node.state.board.turn_color
         
+        # Convert reward to be relative to the root_player_color
         if sim_leaf_player_color == self.root_player_color:
             reward_relative_to_root = reward_from_sim_leaf_pov
         else:
@@ -459,10 +449,11 @@ class MCTS:
             
         current_node = node
         while current_node:
-            if current_node.parent:
+            if current_node.parent: # current_node is not the root
+                # Update visits and total_rewards (which is relative to root_player_color)
                 current_node.update(reward_relative_to_root)
-            else:
-                current_node.visits += 1
+            else: # current_node is the root node
+                current_node.visits += 1 # Root only updates visits; its total_rewards remains 0.0 as per init.
             current_node = current_node.parent
 
 
@@ -474,46 +465,41 @@ ALL_DIRECTIONS_ORDERED = [
 LEGAL_JUMP_DIRECTIONS_RED = tuple(d for d in ALL_DIRECTIONS_ORDERED if d not in {Direction.Up, Direction.UpRight, Direction.UpLeft})
 LEGAL_JUMP_DIRECTIONS_BLUE = tuple(d for d in ALL_DIRECTIONS_ORDERED if d not in {Direction.Down, Direction.DownRight, Direction.DownLeft})
 
+# 新的克隆函数定义
 def _clone_board_mcts_version(board_to_clone: Board) -> Board:
-    """
-    Create a deep copy of a game board for MCTS simulation.
-    Preserves all necessary state including fixed opening move counters.
-    """
+    # 使用原始棋盘的当前玩家颜色初始化新棋盘
     new_board = Board(initial_player=board_to_clone.turn_color)
 
+    # 复制棋盘状态 _state
+    # 为每个坐标创建新的 CellState 对象
     new_board._state = {
         coord: CellState(cell.state)
         for coord, cell in board_to_clone._state.items()
     }
 
+    # 复制历史记录 _history (浅拷贝列表即可，因为BoardMutation是不可变的)
     new_board._history = list(board_to_clone._history)
 
+    # 复制 MCTS 特有的固定开局步数计数器
+    # GameState的__init__方法确保了 board_to_clone 对象上存在这些属性
     new_board._red_fixed_moves = board_to_clone._red_fixed_moves
     new_board._blue_fixed_moves = board_to_clone._blue_fixed_moves
     
     return new_board
 
 class GameState:
-    """
-    Represents the complete state of a game at a particular point.
-    Includes the board state and additional information needed for MCTS.
-    """
     def __init__(self, last_move, board, test_mode=False):
-        self.board = board
         self.last_move = last_move
+        self.board = board
         self.test_mode = test_mode
+        if not hasattr(board, "_red_fixed_moves"):
+            board._red_fixed_moves = 0
+        if not hasattr(board, "_blue_fixed_moves"):
+            board._blue_fixed_moves = 0
+        self._red_fixed_moves = board._red_fixed_moves
+        self._blue_fixed_moves = board._blue_fixed_moves
         self.my_frogs = []
         self._update_my_frogs()
-        
-        # Initialize fixed opening move counters if not present
-        if not hasattr(self.board, '_red_fixed_moves'):
-            self.board._red_fixed_moves = 0
-        if not hasattr(self.board, '_blue_fixed_moves'):
-            self.board._blue_fixed_moves = 0
-            
-        # Local copies for tracking fixed opening moves
-        self._red_fixed_moves = self.board._red_fixed_moves
-        self._blue_fixed_moves = self.board._blue_fixed_moves
 
     def _get_bit(self, coord: Coord) -> int:
         if 0 <= coord.r < BOARD_N and 0 <= coord.c < BOARD_N:
@@ -542,10 +528,6 @@ class GameState:
         return self.board[coord].state == "LilyPad" and not (occupied_mask & self._get_bit(coord))
 
     def _enumerate_jumps(self, start_coord: Coord, player_color: PlayerColor) -> set[MoveAction]:
-        """
-        Find all possible jump sequences from a given starting coordinate.
-        Uses depth-first search to find all valid jump combinations.
-        """
         results = set()
         initial_mask = self._get_initial_occupied_bitmask()
         
@@ -555,6 +537,7 @@ class GameState:
 
         while stack:
             current_pos, current_path_dirs, current_mask, visited_landings = stack.pop()
+
             jumped_further_in_this_step = False
             for direction in jump_directions:
                     dr, dc = direction.value.r, direction.value.c # Direction increments
@@ -595,7 +578,6 @@ class GameState:
         return results
 
     def _update_my_frogs(self):
-        """Update the list of frogs belonging to the current player."""
         self.my_frogs = []
         for r in range(BOARD_N):
             for c in range(BOARD_N):
@@ -604,14 +586,9 @@ class GameState:
                     self.my_frogs.append(coord)
 
     def is_opening_phase(self):
-        """Check if the game is still in the opening phase (first 30 turns)."""
         return self.board.turn_count < 30
         
     def should_use_fixed_opening(self):
-        """
-        Determine if fixed opening moves should be used.
-        Returns True if within first 15 turns and player hasn't used all fixed moves.
-        """
         if self.test_mode:
             return False
         if self.board.turn_count < 15:
@@ -622,10 +599,6 @@ class GameState:
         return False
         
     def get_fixed_opening_move(self):
-        """
-        Return the next fixed opening move for the current player.
-        Returns None if no fixed move is available.
-        """
         if self.board.turn_color == PlayerColor.RED:
             if self._red_fixed_moves == 0: return MoveAction(Coord(0, 2), (Direction.Down,))
             elif self._red_fixed_moves == 1: return MoveAction(Coord(0, 5), (Direction.Down,))
@@ -640,25 +613,16 @@ class GameState:
             elif self._blue_fixed_moves == 4: return MoveAction(Coord(7, 6), (Direction.UpLeft,))
         return None
 
-    def get_legal_actions(self) -> list[Action]:
-        """
-        Get all legal actions for the current state.
-        Returns a list of actions sorted by priority (highest first).
-        """
+    def get_legal_actions(self) -> list[Action]: # Modified to return a sorted list of Actions
         if self.should_use_fixed_opening() and not self.test_mode:
             fixed_move = self.get_fixed_opening_move()
-            if fixed_move is not None: return [fixed_move]
+            if fixed_move is not None: return [fixed_move] # Return as a list
         
+        # Use a list of (priority, action) for sorting, then extract actions
         prioritized_actions_tuples = []
         current_player_color = self.board.turn_color
 
         for coord in self.my_frogs:
-            is_at_goal_line = False
-            if current_player_color == PlayerColor.RED and coord.r == BOARD_N - 1:
-                is_at_goal_line = True
-            elif current_player_color == PlayerColor.BLUE and coord.r == 0:
-                is_at_goal_line = True
-
             # Generate Sliding Moves
             for direction in ALL_DIRECTIONS_ORDERED:
                 slide_action = MoveAction(coord, (direction,))
@@ -670,26 +634,8 @@ class GameState:
                         if final_slide_coord.r > coord.r: is_forward_slide = True
                     else: 
                         if final_slide_coord.r < coord.r: is_forward_slide = True
-                    
-                    current_slide_priority = 1
-                    if is_at_goal_line:
-                        current_slide_priority = 0.5  # Lower priority for moves on goal line
-                    else:
-                        # Check if near goal line
-                        is_near_goal = False
-                        target_coord = coord + direction.value
-                        if current_player_color == PlayerColor.RED and coord.r == BOARD_N - 2:  # Red's 6th row
-                            if self.board[target_coord].state == "LilyPad":  # Moving to goal on lily pad
-                                is_near_goal = True
-                        elif current_player_color == PlayerColor.BLUE and coord.r == 1:  # Blue's 1st row
-                            if self.board[target_coord].state == "LilyPad":  # Moving to goal on lily pad
-                                is_near_goal = True
-                        
-                        if is_near_goal:
-                            current_slide_priority = 55  # Higher priority for moves near goal
-                        else:
-                            current_slide_priority = 55 if is_forward_slide else 1
-                    prioritized_actions_tuples.append((current_slide_priority, slide_action))
+                    priority = 55 if is_forward_slide else 1
+                    prioritized_actions_tuples.append((priority, slide_action))
                 except IllegalActionException:
                     pass 
 
@@ -704,29 +650,26 @@ class GameState:
                     final_jump_coord = land_coord 
                     current_pos_for_calc = land_coord 
 
-                if is_at_goal_line:
-                    current_jump_priority = 0.5  # Lower priority for jumps on goal line
-                else:
-                    is_forward_jump = False
-                    if current_player_color == PlayerColor.RED:
-                        if final_jump_coord.r > coord.r: is_forward_jump = True
-                    else: 
-                        if final_jump_coord.r < coord.r: is_forward_jump = True
-                    
-                    row_change = abs(final_jump_coord.r - coord.r)
-                    if num_segments >= 2:
-                        if is_forward_jump and row_change >= 2: current_jump_priority = 300 
-                        elif is_forward_jump: current_jump_priority = 250 
-                        else: current_jump_priority = 100 
-                    elif num_segments == 1:
-                        if is_forward_jump: current_jump_priority = 150 
-                        else: current_jump_priority = 20
-                prioritized_actions_tuples.append((current_jump_priority, jump_action))
+                is_forward_jump = False
+                if current_player_color == PlayerColor.RED:
+                    if final_jump_coord.r > coord.r: is_forward_jump = True
+                else: 
+                    if final_jump_coord.r < coord.r: is_forward_jump = True
+                
+                row_change = abs(final_jump_coord.r - coord.r)
+                priority = 1 
+                if num_segments >= 2:
+                    if is_forward_jump and row_change >= 2: priority = 300 
+                    elif is_forward_jump: priority = 250 
+                    else: priority = 100 
+                elif num_segments == 1:
+                    if is_forward_jump: priority = 150 
+                    else: priority = 20 
+                prioritized_actions_tuples.append((priority, jump_action))
 
-        # Check if GROW action is available
+        # Generate Grow Action
         current_player_frogs_count = 0
         has_empty_lilypad = False
-        
         for r_idx in range(BOARD_N):
             for c_idx in range(BOARD_N):
                 cell_coord = Coord(r_idx, c_idx)
@@ -737,10 +680,11 @@ class GameState:
                     has_empty_lilypad = True
         
         if current_player_frogs_count < BOARD_N and has_empty_lilypad:
-            prioritized_actions_tuples.append((50, GrowAction()))
+            prioritized_actions_tuples.append((50, GrowAction())) # Priority for GROW
         
-        # Sort actions by priority and extract the actions
+        # Sort actions by priority (descending), then extract the actions themselves
         prioritized_actions_tuples.sort(key=lambda x: x[0], reverse=True)
+        
         sorted_actions = [action for priority, action in prioritized_actions_tuples]
         
         return sorted_actions if sorted_actions else [GrowAction()] # Ensure at least GROW if nothing else
@@ -749,46 +693,43 @@ class GameState:
         return False # Obsolete, _enumerate_jumps handles this
 
     def move(self, action):
-        """
-        Apply an action to the current state and return a new state.
-        Raises ValueError if the action is illegal.
-        """
-        new_board = _clone_board_mcts_version(self.board)
+        new_board = _clone_board_mcts_version(self.board) # 修改此处，使用新的克隆函数
         try:
-            new_board.apply_action(action)
+            new_board.apply_action(action) # ★ 重新添加此行以真正执行动作
+            # Store the board state *before* applying the action to help determine slide vs jump
             new_state = GameState(action, new_board, self.test_mode)
             return new_state 
         except IllegalActionException as e:
             raise ValueError(f"Illegal action: {e}") from e
 
     def is_terminal(self):
-        """Check if the current state is a terminal state."""
         return self.board.game_over
 
     def get_reward(self):
-        """
-        Calculate the reward value for the current state.
-        Returns a high positive/negative value for terminal states,
-        otherwise returns a heuristic evaluation.
-        """
         if self.is_terminal():
             red_score = self.board._player_score(PlayerColor.RED)
             blue_score = self.board._player_score(PlayerColor.BLUE)
             if self.board.turn_color == PlayerColor.RED:
-                return 1000.0 if red_score > blue_score else (-1000.0 if red_score < blue_score else 0.0)
+                return 1.0 if red_score > blue_score else (-1.0 if red_score < blue_score else 0.0)
             else:
-                return 1000.0 if blue_score > red_score else (-1000.0 if blue_score < red_score else 0.0)
+                return 1.0 if blue_score > red_score else (-1.0 if blue_score < red_score else 0.0)
         score = 0.0
         red_goal_count = self.board._row_count(PlayerColor.RED, BOARD_N - 1)
         blue_goal_count = self.board._row_count(PlayerColor.BLUE, 0)
         score += 5.0 * (red_goal_count - blue_goal_count)
         return score if self.board.turn_color == PlayerColor.RED else -score
 
+    def _count_jump_opportunities(self, player_color):
+        jump_count = 0
+        if self.board.turn_color == player_color: # Ensure context is for the player_color
+            for frog_coord in self.my_frogs:
+                 jumps = self._enumerate_jumps(frog_coord, player_color)
+                 for jump_action in jumps:
+                     # Corrected: Count number of directions (segments)
+                     jump_count += len(jump_action.directions) 
+        return jump_count
+
     def _calculate_cohesion_score(self, player_color, piece_coord):
-        """
-        Calculate how well a piece is connected with other friendly pieces.
-        Returns a score between 0 and 1, where 1 indicates perfect cohesion.
-        """
         cohesion_score = 0
         ally_pieces = []
         for coord_ally, cell_ally in self.board._state.items():
@@ -800,21 +741,18 @@ class GameState:
         return 1.0 - (avg_distance / (2 * BOARD_N))
 
     def _check_jump_bridge_formation(self, player_color, target_coord):
-        """
-        Check if a move creates or maintains a bridge formation for jumps.
-        Currently a placeholder for future implementation.
-        """
-        return 0
+        return 0 # Placeholder
 
 
 if __name__ == '__main__':
-    #just for testing
+    # 创建一个测试场景，尝试执行跳跃动作
+    # 使用自带的初始棋盘方法创建棋盘
     basic_board = Board()
     
-
+    # 使用已有棋盘的方法来设置新的棋盘状态
     new_board = Board()
     
-    
+    # 清除所有位置
     for r in range(BOARD_N):
         for c in range(BOARD_N):
             coord = Coord(r, c)
@@ -830,7 +768,7 @@ if __name__ == '__main__':
             if empty_cell:
                 new_board.set_cell_state(coord, empty_cell)
     
-
+    # 放置红方棋子
     red_cell = None
     for coord, cell in basic_board._state.items():
         if cell.state == PlayerColor.RED:
@@ -841,7 +779,7 @@ if __name__ == '__main__':
     if red_cell:
         new_board.set_cell_state(red_coord, red_cell)
     
-
+    # 放置蓝方棋子作为跳跃障碍
     blue_cell = None
     for coord, cell in basic_board._state.items():
         if cell.state == PlayerColor.BLUE:
@@ -852,7 +790,7 @@ if __name__ == '__main__':
     if blue_cell:
         new_board.set_cell_state(blue_coord, blue_cell)
     
-
+    # 放置目标荷叶
     lily_cell = None
     for coord, cell in basic_board._state.items():
         if cell.state == "LilyPad":
@@ -863,17 +801,20 @@ if __name__ == '__main__':
     if lily_cell:
         new_board.set_cell_state(lily_coord, lily_cell)
     
-
+    # 设置为红方回合
     new_board.set_turn_color(PlayerColor.RED)
     
+    # 打印初始棋盘
     print("=== 测试跳跃功能 ===")
     print("初始棋盘:")
     print(new_board.render())
     
+    # 创建GameState并启用测试模式
     state = GameState(None, new_board, test_mode=True)
     legal_actions = state.get_legal_actions()
     print(f"合法动作: {legal_actions}")
     
+    # 使用MCTS-Minimax混合算法
     print("\n===== MCTS-Minimax混合算法 =====")
     start_time = time.time()
     mcts = MCTS(state, use_minimax=True, minimax_depth=2, test_mode=True)
@@ -882,6 +823,7 @@ if __name__ == '__main__':
     print(f"耗时: {minimax_time:.2f}秒")
     print(f"最佳动作: {best_action}")
     
+    # 对比传统MCTS
     print("\n===== 传统MCTS算法 =====")
     start_time = time.time()
     mcts_traditional = MCTS(state, use_minimax=False, test_mode=True)

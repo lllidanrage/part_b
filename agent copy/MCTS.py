@@ -130,14 +130,14 @@ class MCTS:
     1:    优先级⑲  - 无连跳潜力的水平跳跃 / 非向前普通移动
     0.5:  优先级⑳  - 终点线无效腾挪 (新，棋子已在终点线且移动/跳跃后仍在该终点线)
     """
-    def __init__(self, state, use_minimax=True, minimax_depth=2, test_mode=True):
+    def __init__(self, state, use_minimax=True, minimax_depth=2, test_mode=False):
         self.root = Node(state)  # Node.__init__ 内部会处理 unexplored_actions
         self.use_minimax = use_minimax  # 是否使用Minimax进行模拟
         self.minimax_depth = minimax_depth  # 增加Minimax搜索深度默认值
         self.test_mode = test_mode  # 添加测试模式标志
         self.root_player_color = state.board.turn_color # Added: Store root player's color
 
-    def search(self, iterations: int = 30):
+    def search(self, iterations: int = 50):
         # ---------- 固定开局检查 ----------
         if self.root.state.should_use_fixed_opening() and not self.test_mode:
             fixed_move = self.root.state.get_fixed_opening_move()
@@ -366,7 +366,7 @@ class MCTS:
         sorted_actions = sorted(legal_actions, key=lambda a: action_priorities[a], reverse=True)
         
         # 取优先级最高的几个动作
-        max_actions_to_consider = 8
+        max_actions_to_consider = 12
         pruned_actions = sorted_actions[:max_actions_to_consider]
         
         # 进行Minimax搜索
@@ -464,7 +464,6 @@ ALL_DIRECTIONS_ORDERED = [
 ]
 LEGAL_JUMP_DIRECTIONS_RED = tuple(d for d in ALL_DIRECTIONS_ORDERED if d not in {Direction.Up, Direction.UpRight, Direction.UpLeft})
 LEGAL_JUMP_DIRECTIONS_BLUE = tuple(d for d in ALL_DIRECTIONS_ORDERED if d not in {Direction.Down, Direction.DownRight, Direction.DownLeft})
-MAX_JUMP_SEGMENTS = 4 # Limit chain jump length (e.g., up to 4 segments)
 
 # 新的克隆函数定义
 def _clone_board_mcts_version(board_to_clone: Board) -> Board:
@@ -540,10 +539,7 @@ class GameState:
             current_pos, current_path_dirs, current_mask, visited_landings = stack.pop()
 
             jumped_further_in_this_step = False
-            if len(current_path_dirs) >= MAX_JUMP_SEGMENTS:
-                pass 
-            else:
-                for direction in jump_directions:
+            for direction in jump_directions:
                     dr, dc = direction.value.r, direction.value.c # Direction increments
                     
                     # Calculate integer coordinates first
@@ -627,6 +623,13 @@ class GameState:
         current_player_color = self.board.turn_color
 
         for coord in self.my_frogs:
+            # 检查棋子是否在终点线
+            is_at_goal_line = False
+            if current_player_color == PlayerColor.RED and coord.r == BOARD_N - 1:
+                is_at_goal_line = True
+            elif current_player_color == PlayerColor.BLUE and coord.r == 0:
+                is_at_goal_line = True
+
             # Generate Sliding Moves
             for direction in ALL_DIRECTIONS_ORDERED:
                 slide_action = MoveAction(coord, (direction,))
@@ -638,8 +641,26 @@ class GameState:
                         if final_slide_coord.r > coord.r: is_forward_slide = True
                     else: 
                         if final_slide_coord.r < coord.r: is_forward_slide = True
-                    priority = 55 if is_forward_slide else 1
-                    prioritized_actions_tuples.append((priority, slide_action))
+                    
+                    current_slide_priority = 1
+                    if is_at_goal_line:
+                        current_slide_priority = 0.5  # 已到达终点的棋子移动优先级降低
+                    else:
+                        # 检查是否在靠近终点的一行
+                        is_near_goal = False
+                        target_coord = coord + direction.value
+                        if current_player_color == PlayerColor.RED and coord.r == BOARD_N - 2:  # 红方第6行
+                            if self.board[target_coord].state == "LilyPad":  # 向终点移动且目标是荷叶
+                                is_near_goal = True
+                        elif current_player_color == PlayerColor.BLUE and coord.r == 1:  # 蓝方第1行
+                            if self.board[target_coord].state == "LilyPad":  # 向终点移动且目标是荷叶
+                                is_near_goal = True
+                        
+                        if is_near_goal:
+                            current_slide_priority = 55  # 靠近终点一行的向终点移动
+                        else:
+                            current_slide_priority = 55 if is_forward_slide else 1
+                    prioritized_actions_tuples.append((current_slide_priority, slide_action))
                 except IllegalActionException:
                     pass 
 
@@ -654,22 +675,24 @@ class GameState:
                     final_jump_coord = land_coord 
                     current_pos_for_calc = land_coord 
 
-                is_forward_jump = False
-                if current_player_color == PlayerColor.RED:
-                    if final_jump_coord.r > coord.r: is_forward_jump = True
-                else: 
-                    if final_jump_coord.r < coord.r: is_forward_jump = True
-                
-                row_change = abs(final_jump_coord.r - coord.r)
-                priority = 1 
-                if num_segments >= 2:
-                    if is_forward_jump and row_change >= 2: priority = 300 
-                    elif is_forward_jump: priority = 250 
-                    else: priority = 100 
-                elif num_segments == 1:
-                    if is_forward_jump: priority = 150 
-                    else: priority = 20 
-                prioritized_actions_tuples.append((priority, jump_action))
+                if is_at_goal_line:
+                    current_jump_priority = 0.5  # 已到达终点的棋子跳跃优先级降低
+                else:
+                    is_forward_jump = False
+                    if current_player_color == PlayerColor.RED:
+                        if final_jump_coord.r > coord.r: is_forward_jump = True
+                    else: 
+                        if final_jump_coord.r < coord.r: is_forward_jump = True
+                    
+                    row_change = abs(final_jump_coord.r - coord.r)
+                    if num_segments >= 2:
+                        if is_forward_jump and row_change >= 2: current_jump_priority = 300 
+                        elif is_forward_jump: current_jump_priority = 250 
+                        else: current_jump_priority = 100 
+                    elif num_segments == 1:
+                        if is_forward_jump: current_jump_priority = 150 
+                        else: current_jump_priority = 20
+                prioritized_actions_tuples.append((current_jump_priority, jump_action))
 
         # Generate Grow Action
         current_player_frogs_count = 0
@@ -714,9 +737,9 @@ class GameState:
             red_score = self.board._player_score(PlayerColor.RED)
             blue_score = self.board._player_score(PlayerColor.BLUE)
             if self.board.turn_color == PlayerColor.RED:
-                return 1.0 if red_score > blue_score else (-1.0 if red_score < blue_score else 0.0)
+                return 1000.0 if red_score > blue_score else (-1000.0 if red_score < blue_score else 0.0)
             else:
-                return 1.0 if blue_score > red_score else (-1.0 if blue_score < red_score else 0.0)
+                return 1000.0 if blue_score > red_score else (-1000.0 if blue_score < red_score else 0.0)
         score = 0.0
         red_goal_count = self.board._row_count(PlayerColor.RED, BOARD_N - 1)
         blue_goal_count = self.board._row_count(PlayerColor.BLUE, 0)
